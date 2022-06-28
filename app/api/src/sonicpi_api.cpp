@@ -199,7 +199,7 @@ std::shared_ptr<reproc::process> SonicPiAPI::StartProcess(const std::vector<std:
     return spProcess;
 }
 
-bool SonicPiAPI::StartBootDaemon()
+BootDaemonInitResult SonicPiAPI::StartBootDaemon(bool noScsynthInputs)
 {
     LOG(INFO, "Launching Sonic Pi Boot Daemon:");
 
@@ -208,6 +208,10 @@ bool SonicPiAPI::StartBootDaemon()
 
     args.push_back(GetPath(SonicPiPath::RubyPath).string());
     args.push_back(GetPath(SonicPiPath::BootDaemonPath).string());
+
+    if(noScsynthInputs) {
+      args.push_back("--no-scsynth-inputs");
+    }
 
     std::ostringstream str;
     for (auto& arg : args)
@@ -227,10 +231,9 @@ bool SonicPiAPI::StartBootDaemon()
         m_pClient->Report(message);
 
         LOG(ERR, "Failed to start Boot Daemon!");
-        return false;
+        return BootDaemonInitResult::TerminalError;
     }
-
-    LOG(INFO, "Attempting to read Boot Daemon output");
+    LOG(INFO, "Reading Boot Daemon output...");
 
     // We need a mutex along with `output` to prevent the main thread and
     // background thread from modifying `output` at the same time (`std::string`
@@ -243,65 +246,124 @@ bool SonicPiAPI::StartBootDaemon()
 
     if(ec || bytes_read < 0) {
       if(ec) {
-        LOG(ERR, "Error reading ports via Boot Daemon STDOUT");
+        LOG(ERR, "Error reading ports via Boot Daemon STDOUT. Bytes read: "  + std::to_string(bytes_read) + " Error code: " << ec);
+
       } else {
         LOG(ERR, "Failed to read ports via Boot Daemon STDOUT. Bytes read: " + std::to_string(bytes_read));
 
     }
-            return false;
+      return BootDaemonInitResult::TerminalError;
     }
 
     std::string input_str(buffer, buffer + bytes_read);
+      input_str = string_trim(input_str);
 
-    input_str = string_trim(input_str);
-    auto ports = string_split(input_str, " ");
-    std::transform(ports.begin(), ports.end(), ports.begin(), [](std::string& val) { return string_trim(val); });
+    if(input_str.find("SuperCollider Audio Server Boot Error") == 0) {
+      LOG(ERR, "SuperCollider Audio Server boot error detected");
+      return BootDaemonInitResult::ScsynthBootError;
+    } else {
+      auto daemon_stdout = string_split(input_str, " ");
+      std::transform(daemon_stdout.begin(), daemon_stdout.end(), daemon_stdout.begin(), [](std::string& val) { return string_trim(val); });
 
-
-    for(int i = 0 ; i < ports.size() ; i ++) {
-      int port = std::stoi(ports[i]);
-      LOG(INFO, "port: " + std::to_string(port));
+    for(int i = 0 ; i < daemon_stdout.size() ; i ++) {
+      LOG(INFO, "daemon_stdout: " + daemon_stdout[i]);
     }
 
-    if(ports.size() != 5) {
-      LOG(ERR, "\nError. Was expecting 5 port numbers from the Daemon Booter. Got: " + std::to_string(ports.size()) + "\n");
-      return false;
+    if(daemon_stdout.size() != 8) {
+      LOG(ERR, "\nError. Was expecting 7 port numbers and a token from the Daemon Booter. Got: " + input_str + "\n");
+      return BootDaemonInitResult::TerminalError;
     }
 
-    m_ports[SonicPiPortId::daemon] = std::stoi(ports[0]);
-    m_ports[SonicPiPortId::gui_listen_to_server] = std::stoi(ports[1]);
-    m_ports[SonicPiPortId::gui_send_to_server] = std::stoi(ports[2]);
-    m_ports[SonicPiPortId::scsynth] = std::stoi(ports[3]);
-    m_ports[SonicPiPortId::server_osc_cues] = std::stoi(ports[4]);
+    m_ports[SonicPiPortId::daemon] = std::stoi(daemon_stdout[0]);
+    m_ports[SonicPiPortId::gui_listen_to_spider] = std::stoi(daemon_stdout[1]);
+    m_ports[SonicPiPortId::gui_send_to_spider] = std::stoi(daemon_stdout[2]);
+    m_ports[SonicPiPortId::scsynth] = std::stoi(daemon_stdout[3]);
+    m_ports[SonicPiPortId::tau_osc_cues] = std::stoi(daemon_stdout[4]);
+    m_ports[SonicPiPortId::tau] = std::stoi(daemon_stdout[5]);
+    m_ports[SonicPiPortId::phx_http] = std::stoi(daemon_stdout[6]);
+    m_token = std::stoi(daemon_stdout[7]);
 
-    m_spOscSender = std::make_shared<OscSender>(std::stoi(ports[2]));
+    LOG(INFO, "Setting up OSC sender to Spider on port " << m_ports[SonicPiPortId::gui_send_to_spider]);
+    m_spOscSpiderSender    = std::make_shared<OscSender>(m_ports[SonicPiPortId::gui_send_to_spider]);
 
-    m_bootDaemonSock = std::make_shared<kissnet::tcp_socket>(kissnet::endpoint("127.0.0.1", m_ports[SonicPiPortId::daemon]));
-    m_bootDaemonSock->connect();
+    LOG(INFO, "Setting up OSC sender to Daemon on port " << m_ports[SonicPiPortId::daemon]);
+    m_spOscDaemonSender = std::make_shared<OscSender>(m_ports[SonicPiPortId::daemon]);
 
+    LOG(INFO, "Setting up OSC sender to Tau on port " << m_ports[SonicPiPortId::tau]);
+    m_spOscTauSender       = std::make_shared<OscSender>(m_ports[SonicPiPortId::tau]);
     LOG(INFO, "Setting up Boot Daemon keep alive loop");
     m_bootDaemonSockPingLoopThread = std::thread([&]() {
-      auto keep_alive_msg = std::string{ "keep-alive\n" };
       while(m_keep_alive.load())
       {
         LOG(DBG, "SND keep_alive");
-        m_bootDaemonSock->send(reinterpret_cast<const std::byte*>(keep_alive_msg.c_str()), keep_alive_msg.size());
+        Message msg("/daemon/keep-alive");
+        msg.pushInt32(m_token);
+        m_spOscDaemonSender->sendOSC(msg);
         LOG(DBG, "SND keep_alive sent");
-        std::this_thread::sleep_for(1s);
+        std::this_thread::sleep_for(4s);
       }
+      LOG(INFO, "Keep Alive Thread Loop has completed.");
     });
 
     m_startServerTime = timer_start();
-    return true;
+      return BootDaemonInitResult::Successful;
+    }
 }
 
 SonicPiAPI::~SonicPiAPI()
 {
+    LOG(INFO, "API deconstructor initiating shutdown... ");
     Shutdown();
+}
+
+void SonicPiAPI::RestartTau()
+{
+
+    LOG(INFO, "Asking Daemon to restart Tau ");
+    Message msg("/daemon/restart-tau");
+    msg.pushInt32(m_token);
+    m_spOscDaemonSender->sendOSC(msg);
+    return;
+}
+
+
+bool SonicPiAPI::LinkEnable()
+{
+    Message msg("/link-enable");
+    bool res = TauSendOSC(msg);
+    if (!res)
+    {
+        return false;
+    }
+    return true;
+}
+
+  bool SonicPiAPI::SetLinkBPM(double bpm)
+{
+    Message msg("/link-set-tempo");
+    msg.pushFloat((float) bpm);
+    bool res = TauSendOSC(msg);
+    if (!res)
+    {
+        return false;
+    }
+    return true;
+}
+
+bool SonicPiAPI::LinkDisable()
+{
+    Message msg("/link-disable");
+    bool res = TauSendOSC(msg);
+    if (!res)
+    {
+        return false;
+    }
+    return true;
 }
 
 void SonicPiAPI::Shutdown()
 {
+    LOG(INFO, "Initiating shutdown...");
     std::lock_guard<std::mutex> lg(m_osc_mtx);
 
     if(m_shutdown_engaged)
@@ -310,7 +372,7 @@ void SonicPiAPI::Shutdown()
       return;
     }
 
-    LOG(INFO, "Initiating Shutdown");
+    LOG(INFO, "Shutting down now...");
 
     m_shutdown_engaged = true;
 
@@ -347,17 +409,15 @@ void SonicPiAPI::Shutdown()
         m_keep_alive.store(false);
     }
 
-    if (m_bootDaemonSock)
-    {
-        LOG(INFO, "Closing socket to Boot Daemon...");
-        m_bootDaemonSock->close();
-    } else {
-      LOG(INFO, "Boot Daemon socket not found so no need to close...");
-    }
 
     m_state = State::Reset;
     LOG(INFO, "API State set to: Reset...");
     LOG(INFO, "Waiting for Daemon keep alive loop to have stopped...");
+    LOG(INFO, "Sending /daemon/exit to daemon's kill switch with token " << std::to_string(m_token)) ;
+    Message msg("/daemon/exit");
+    msg.pushInt32(m_token);
+    m_spOscDaemonSender->sendOSC(msg);
+
     m_bootDaemonSockPingLoopThread.join();
     m_pingerThread.join();
 
@@ -375,12 +435,12 @@ bool SonicPiAPI::StartOscServer()
     if (m_protocol == APIProtocol::UDP)
 
       {
-        auto listenPort = GetPort(SonicPiPortId::gui_listen_to_server);
+          auto listenPort = GetPort(SonicPiPortId::gui_listen_to_spider);
 
-        m_spOscServer = std::make_shared<OscServerUDP>(m_pClient, std::make_shared<OscHandler>(m_pClient), listenPort);
-        m_oscServerThread = std::thread([&]() {
-            m_spOscServer->start();
-            LOG(DBG, "Osc Server Thread Exiting");
+          m_spOscSpiderServer = std::make_shared<OscServerUDP>(m_pClient, std::make_shared<OscHandler>(m_pClient), listenPort);
+          m_oscServerThread = std::thread([&]() {
+              m_spOscSpiderServer->start();
+              LOG(DBG, "Osc Server Thread Exiting");
         });
     }
     else
@@ -397,10 +457,27 @@ bool SonicPiAPI::SendOSC(Message m)
 
     if (WaitUntilReady())
     {
-        bool res = m_spOscSender->sendOSC(m);
+        bool res = m_spOscSpiderSender->sendOSC(m);
         if (!res)
         {
-            LOG(ERR, "Could Not Send OSC");
+            LOG(ERR, "Could Not Send OSC to Spider");
+            return false;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool SonicPiAPI::TauSendOSC(Message m)
+{
+
+    if (WaitUntilReady())
+    {
+        bool res = m_spOscTauSender->sendOSC(m);
+        if (!res)
+        {
+            LOG(ERR, "Could Not Send OSC to Tau");
             return false;
         }
         return true;
@@ -422,18 +499,18 @@ bool SonicPiAPI::WaitUntilReady()
         num_tries--;
         if (m_state == State::Error)
         {
-          LOG(ERR, "Oh no, Spider Server got to an Error State whilst starting...");
-          return false;
+            LOG(ERR, "Oh no, Spider Server got to an Error State whilst starting...");
+            return false;
         }
-        LOG(ERR, "Waiting Until Ready... " + std::to_string(num_tries));
+        LOG(INFO, "Waiting Until Ready... " + std::to_string(num_tries));
         std::this_thread::sleep_for(1s);
     }
 
     if (num_tries < 1)
     {
-      return false;
+        return false;
     } else {
-      return true;
+        return true;
     }
 }
 
@@ -445,8 +522,8 @@ bool SonicPiAPI::PingUntilServerCreated()
 
     if (m_state == State::Created)
     {
-      LOG(ERR, "Error! No need to ping server as it's already created!");
-      return true;
+        LOG(ERR, "Error! No need to ping server as it's already created!");
+        return true;
     }
 
     if (m_state != State::Initializing)
@@ -457,24 +534,24 @@ bool SonicPiAPI::PingUntilServerCreated()
 
     int timeout = 60;
     LOG(INFO, "Waiting for Sonic Pi Spider Server to respond...");
-    while (m_keep_alive.load() && m_spOscServer->waitForServer() && timeout-- > 0)
+    while (m_keep_alive.load() && m_spOscSpiderServer->waitForServer() && timeout-- > 0)
     {
         std::this_thread::sleep_for(1s);
         LOG(INFO, ".");
-        if (m_spOscServer->isIncomingPortOpen())
+        if (m_spOscSpiderServer->isIncomingPortOpen())
         {
             Message msg("/ping");
-            msg.pushStr(m_guid);
+            msg.pushInt32(m_token);
             msg.pushStr("QtClient/1/hello");
 
             //bypass ::SendOSC as that needs to wait until ready
             //which is precisely what this message is attempting
             //to figure out!
-            m_spOscSender->sendOSC(msg);
+            m_spOscSpiderSender->sendOSC(msg);
         }
     }
 
-    if (!m_spOscServer->isServerStarted())
+    if (!m_spOscSpiderServer->isServerStarted())
     {
         MessageInfo message;
         message.type = MessageType::StartupError;
@@ -501,9 +578,10 @@ bool SonicPiAPI::PingUntilServerCreated()
 }
 
 // Initialize the API with the sonic pi root path (the folder containing the app folder)
-bool SonicPiAPI::Init(const fs::path& root)
+APIInitResult SonicPiAPI::Init(const fs::path& root, bool noScsynthInputs)
 {
 
+  m_token = -1;
   m_osc_mtx.lock();
 
     if (m_state == State::Created)
@@ -516,15 +594,8 @@ bool SonicPiAPI::Init(const fs::path& root)
         LOG(ERR, "Call shutdown before init!");
         m_state = State::Error;
         m_osc_mtx.unlock();
-        return false;
+        return APIInitResult::TerminalError;
     }
-
-    // A new Guid for each initialization
-#if defined(__APPLE__)
-    m_guid = random_string(32);
-#else
-    m_guid = xg::newGuid().str();
-#endif
 
     if (!fs::exists(root))
     {
@@ -535,16 +606,15 @@ bool SonicPiAPI::Init(const fs::path& root)
         m_pClient->Report(message);
         m_state = State::Error;
         m_osc_mtx.unlock();
-        return false;
+        return APIInitResult::TerminalError;
     }
 
     if (!InitializePaths(root))
     {
       // oh no, something went wrong :-(
       m_osc_mtx.unlock();
-      return false;
+      return APIInitResult::TerminalError;
     }
-
 
     // Make the log folder and check we can write to it.
     // This is /usr/home/.sonic-pi/log
@@ -556,7 +626,6 @@ bool SonicPiAPI::Init(const fs::path& root)
         if (!fs::create_directories(logPath, err))
         {
             m_homeDirWriteable = false;
-            LOG(INFO, "Home dir not writable: " << err.message());
         }
         else
         {
@@ -564,12 +633,13 @@ bool SonicPiAPI::Init(const fs::path& root)
             if (!fstream.is_open())
             {
                 m_homeDirWriteable = false;
-                LOG(INFO, "Home dir not writable!");
             }
         }
     }
 
+
     EnsurePathsAreCanonical();
+    StartClearLogsScript();
 
     // Setup redirection of log from this app to our log file
     // stdout into ~/.sonic-pi/log/gui.log
@@ -580,19 +650,17 @@ bool SonicPiAPI::Init(const fs::path& root)
         std::cout.rdbuf(m_stdlog.rdbuf());
     }
 
+    LOG(INFO, "Starting...");
 
     // Start again, shutdown if we fail init
     m_state = State::Invalid;
     auto exitScope = sg::make_scope_guard([&]() {
         if (m_state == State::Invalid)
         {
-            LOG(DBG, "Init failure, calling shutdown");
+            LOG(INFO, "Init failure, calling shutdown");
             Shutdown();
         }
     });
-
-    LOG(INFO, "Welcome to Sonic Pi");
-    LOG(INFO, "===================");
 
     if (m_homeDirWriteable) {
         LOG(INFO, "Home dir writable: ");
@@ -601,24 +669,32 @@ bool SonicPiAPI::Init(const fs::path& root)
     }
 
     LOG(INFO, "Log Path: " + GetPath(SonicPiPath::LogPath).string());
-
+    m_state = State::Initializing;
     // Start the Boot Daemon
-    if (!StartBootDaemon())
+    BootDaemonInitResult boot_daemon_res = StartBootDaemon(noScsynthInputs);
+
+    if (boot_daemon_res != BootDaemonInitResult::Successful)
     {
+        LOG(INFO, "Attempting to start Boot Daemon failed....";)
         m_osc_mtx.unlock();
-        return false;
+        if (boot_daemon_res == BootDaemonInitResult::ScsynthBootError) {
+          return APIInitResult::ScsynthBootError;
+        } else {
+          return APIInitResult::TerminalError;
+        }
     }
 
-    // Start the OC Server
+    // Start the OSC Server
     if(!StartOscServer())
     {
+        LOG(INFO, "Attempting to start OSC Server failed....");
         m_osc_mtx.unlock();
-        return false;
+        return APIInitResult::TerminalError;
     }
 
     LOG(INFO, "API Init Started...");
 
-    m_state = State::Initializing;
+
     LOG(INFO, "API State set to: Initializing...");
 
     m_osc_mtx.unlock();
@@ -628,7 +704,7 @@ bool SonicPiAPI::Init(const fs::path& root)
         PingUntilServerCreated();
     });
 
-    return true;
+    return APIInitResult::Successful;
 }
 
 bool SonicPiAPI::InitializePaths(const fs::path& root)
@@ -653,6 +729,9 @@ bool SonicPiAPI::InitializePaths(const fs::path& root)
     // Set Ruby script paths
     m_paths[SonicPiPath::BootDaemonPath]      = m_paths[SonicPiPath::RootPath] / "app/server/ruby/bin/daemon.rb";
     m_paths[SonicPiPath::FetchUrlPath]        = m_paths[SonicPiPath::RootPath] / "app/server/ruby/bin/fetch-url.rb";
+    m_paths[SonicPiPath::ClearLogsPath]        = m_paths[SonicPiPath::RootPath] / "app/server/ruby/bin/clear-logs.rb";
+
+
 
     // Set Log paths
     m_paths[SonicPiPath::LogPath] = m_paths[SonicPiPath::UserPath] / "log";
@@ -665,8 +744,12 @@ bool SonicPiAPI::InitializePaths(const fs::path& root)
     // Set built-in samples path
     m_paths[SonicPiPath::SamplePath] = m_paths[SonicPiPath::RootPath] / "etc/samples/";
 
+    // Set Config paths
+    m_paths[SonicPiPath::ConfigPath]              = m_paths[SonicPiPath::UserPath] / "config";
+    m_paths[SonicPiPath::AudioSettingsConfigPath] = m_paths[SonicPiPath::ConfigPath] / "audio-settings.toml";
+
     // Sanity check for script existence
-    const auto checkPaths = std::vector<SonicPiPath>{ SonicPiPath::FetchUrlPath, SonicPiPath::BootDaemonPath };
+    const auto checkPaths = std::vector<SonicPiPath>{ SonicPiPath::FetchUrlPath, SonicPiPath::BootDaemonPath, SonicPiPath::ClearLogsPath  };
     for (const auto& check : checkPaths)
     {
         if (!fs::exists(m_paths[check]))
@@ -699,7 +782,7 @@ bool SonicPiAPI::TestAudio()
     // Just play a chord
     auto fileName = "d:/pi.rb";
     Message msg("/save-and-run-buffer");
-    msg.pushStr(m_guid);
+    msg.pushInt32(m_token);
     msg.pushStr(fileName);
     msg.pushStr("play_chord [:c4, :e4, :g4]");
     msg.pushStr(fileName);
@@ -717,10 +800,10 @@ void SonicPiAPI::StopOscServer()
     // */
 
     // Stop the osc server and hence the osc thread
-    if (m_spOscServer)
+    if (m_spOscSpiderServer)
     {
         LOG(DBG, "Stopping Osc Server...");
-        m_spOscServer->stop();
+        m_spOscSpiderServer->stop();
     }
 
     // The server should have closed the osc channel; therefore we can join the thread
@@ -734,7 +817,7 @@ void SonicPiAPI::StopOscServer()
     {
         LOG(DBG, "Osc Server thread has already stopped");
     }
-    m_spOscSender.reset();
+    m_spOscSpiderSender.reset();
 }
 
 
@@ -746,6 +829,25 @@ const fs::path& SonicPiAPI::GetPath(SonicPiPath piPath)
 const int& SonicPiAPI::GetPort(SonicPiPortId port)
 {
     return m_ports[port];
+}
+
+std::string SonicPiAPI::GetScsynthLog()
+{
+    auto logs = std::vector<fs::path>{GetPath(SonicPiPath::SCSynthLogPath)};
+
+    std::ostringstream str;
+    for (auto& log : logs)
+    {
+        if (fs::exists(log))
+        {
+            auto contents = string_trim(file_read(log));
+            if (!contents.empty())
+            {
+              str << contents;
+            }
+        }
+    }
+    return str.str();
 }
 
 std::string SonicPiAPI::GetLogs()
@@ -807,15 +909,15 @@ void SonicPiAPI::AudioProcessor_ConsumedAudio()
 }
 
 
-const std::string& SonicPiAPI::GetGuid() const
+const int SonicPiAPI::GetGuid() const
 {
-    return m_guid;
+    return m_token;
 }
 
-void SonicPiAPI::BufferNewLineAndIndent(int point_line, int point_index, int first_line, const std::string& code, const std::string& fileName, const std::string& id)
+void SonicPiAPI::BufferNewLineAndIndent(int point_line, int point_index, int first_line, const std::string& code, const std::string& fileName)
 {
     Message msg("/buffer-newline-and-indent");
-    msg.pushStr(id);
+    msg.pushInt32(m_token);
     msg.pushStr(fileName);
     msg.pushStr(code);
     msg.pushInt32(point_line);
@@ -827,7 +929,7 @@ void SonicPiAPI::BufferNewLineAndIndent(int point_line, int point_index, int fir
 void SonicPiAPI::Run(const std::string& buffer, const std::string& text)
 {
     Message msg("/save-and-run-buffer");
-    msg.pushStr(m_guid);
+    msg.pushInt32(m_token);
     msg.pushStr(buffer);
     msg.pushStr(text);
     msg.pushStr(buffer);
@@ -837,7 +939,7 @@ void SonicPiAPI::Run(const std::string& buffer, const std::string& text)
 void SonicPiAPI::Stop()
 {
     Message msg("/stop-all-jobs");
-    msg.pushStr(m_guid);
+    msg.pushInt32(m_token);
     SendOSC(msg);
 }
 
@@ -851,7 +953,7 @@ void SonicPiAPI::LoadWorkspaces()
     for (uint32_t i = 0; i < MaxWorkspaces(); i++)
     {
         Message msg("/load-buffer");
-        msg.pushStr(m_guid);
+        msg.pushInt32(m_token);
         std::string s = "workspace_" + string_number_name(i);
         msg.pushStr(s);
         SendOSC(msg);
@@ -868,7 +970,7 @@ void SonicPiAPI::SaveWorkspaces(const std::map<uint32_t, std::string>& workspace
         if (itrSpace != workspaces.end())
         {
             Message msg("/save-buffer");
-            msg.pushStr(m_guid);
+            msg.pushInt32(m_token);
             std::string s = "workspace_" + string_number_name(i);
             msg.pushStr(s);
             msg.pushStr(itrSpace->second);
@@ -884,7 +986,7 @@ bool SonicPiAPI::SaveAndRunBuffer(const std::string& name, const std::string& te
     m_settings.Preprocess(code);
 
     Message msg("/save-and-run-buffer");
-    msg.pushStr(m_guid);
+    msg.pushInt32(m_token);
     msg.pushStr(name);
     msg.pushStr(code);
     msg.pushStr(name);
@@ -904,6 +1006,25 @@ const APISettings& SonicPiAPI::GetSettings() const
 void SonicPiAPI::SetSettings(const APISettings& settings)
 {
     m_settings = settings;
+}
+
+
+void SonicPiAPI::StartClearLogsScript()
+{
+    std::string output;
+    std::vector<std::string> args;
+
+    args.push_back(GetPath(SonicPiPath::RubyPath).string());
+    args.push_back(GetPath(SonicPiPath::ClearLogsPath).string());
+
+    std::ostringstream str;
+    for (auto& arg : args)
+    {
+        str << arg << " ";
+    }
+    LOG(INFO, "Args: " << str.str());
+
+    auto proc =  StartProcess(args);
 }
 
 } // namespace SonicPi

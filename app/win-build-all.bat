@@ -1,11 +1,7 @@
-cd %~dp0
+set WORKING_DIR=%CD%
+
 call win-prebuild.bat
-
-cd %~dp0
 call win-config.bat
+call win-build-gui.bat
 
-cd %~dp0
-cd build
-cmake --build . --config Release
-
-cd %~dp0
+cd %WORKING_DIR%

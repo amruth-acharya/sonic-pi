@@ -32,7 +32,7 @@ module SonicPi
       120
     end
 
-    def link_is_enabled?
+    def link_is_on?
       true
     end
 
@@ -81,7 +81,6 @@ module SonicPi
       @job_subthread_mutex = Mutex.new
       @osc_cue_server_mutex = Mutex.new
       @user_jobs = Jobs.new
-      @global_start_time = Time.now
       @session_id = SecureRandom.uuid
       @snippets = {}
       @system_state = EventHistory.new
@@ -222,7 +221,7 @@ module SonicPi
         __system_thread_locals.set :sonic_pi_spider_job_id, id
         __system_thread_locals.set :sonic_pi_spider_silent, silent
         __system_thread_locals.set :sonic_pi_spider_job_info, info
-        __reset_spider_time_and_beat!
+        __init_spider_time_and_beat!
         __system_thread_locals.set_local :sonic_pi_local_spider_delayed_messages, []
 
         __set_default_system_thread_locals!

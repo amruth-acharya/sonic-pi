@@ -38,13 +38,13 @@ start_link() ->
 
 init(Parent) ->
     register(?SERVER, self()),
-    Internal = application:get_env(?APPLICATION, internal, true),
-    Enabled = application:get_env(?APPLICATION, enabled, true),
-    MIDIEnabled = application:get_env(?APPLICATION, midi_enabled, true),
-    LinkEnabled = application:get_env(?APPLICATION, link_enabled, true),
-    InPort = application:get_env(?APPLICATION, in_port, undefined),
-    CuePort = application:get_env(?APPLICATION, spider_port, undefined),
-    CueHost = {127,0,0,1},
+    OSCInUDPLoopbackRestricted = application:get_env(?APPLICATION, osc_in_udp_loopback_restricted, true),
+    CuesOn                     = application:get_env(?APPLICATION, cues_on,                        true),
+    MIDIOn                     = application:get_env(?APPLICATION, midi_on,                        true),
+    LinkOn                     = application:get_env(?APPLICATION, link_on,                        true),
+    OSCInUDPPort               = application:get_env(?APPLICATION, osc_in_udp_port,                undefined),
+    CuePort                    = application:get_env(?APPLICATION, spider_port,                    undefined),
+    CueHost                    = {127,0,0,1},
 
     logger:info("~n"
               "+--------------------------------------+~n"
@@ -56,13 +56,13 @@ init(Parent) ->
               "  OSC cue forwarding to ~p              ~n"
               "                     on port ~p         ~n"
               "+--------------------------------------+~n~n~n",
-              [erlang:system_info(otp_release), InPort, CueHost, CuePort]),
+              [erlang:system_info(otp_release), OSCInUDPPort, CueHost, CuePort]),
 
-    case Internal of
+    case OSCInUDPLoopbackRestricted of
         true ->
-            {ok, InSocket} = gen_udp:open(InPort, [binary, {ip, loopback}]);
+            {ok, InSocket} = gen_udp:open(OSCInUDPPort, [binary, {ip, loopback}]);
         _ ->
-            {ok, InSocket} = gen_udp:open(InPort, [binary])
+            {ok, InSocket} = gen_udp:open(OSCInUDPPort, [binary])
     end,
 
     %% tell parent we have allocated resources and are up and running
@@ -71,13 +71,13 @@ init(Parent) ->
     logger:debug("listening for OSC cues on socket: ~p",
           [try erlang:port_info(InSocket) catch _:_ -> undefined end]),
     State = #{parent => Parent,
-              enabled => Enabled,
-              midi_enabled => MIDIEnabled,
-              link_enabled => LinkEnabled,
+              cues_on => CuesOn,
+              midi_on => MIDIOn,
+              link_on => LinkOn,
               cue_host => CueHost,
               cue_port => CuePort,
-              internal => Internal,
-              in_port => InPort,
+              osc_in_udp_loopback_restricted => OSCInUDPLoopbackRestricted,
+              osc_in_udp_port => OSCInUDPPort,
               in_socket => InSocket
 
              },
@@ -87,69 +87,96 @@ loop(State) ->
     receive
         {midi_in, Path, Args} ->
             case State of
-                #{midi_enabled := true} ->
+                #{midi_on := true} ->
                     CueHost = maps:get(cue_host, State),
                     CuePort = maps:get(cue_port, State),
                     InSocket = maps:get(in_socket, State),
                     forward_internal_cue(CueHost, CuePort, InSocket, Path, Args),
                     ?MODULE:loop(State);
-                #{midi_enabled := false} ->
+                #{midi_on := false} ->
                     logger:debug("MIDI cue forwarding disabled - ignored: ~p", [{Path, Args}]),
                     ?MODULE:loop(State)
             end;
 
         {link, num_peers, NumPeers} ->
             case State of
-                #{link_enabled := true,
+                #{link_on := true,
                   cue_host := CueHost,
                   cue_port := CuePort,
                   in_socket := InSocket} ->
                     forward_internal_cue(CueHost, CuePort, InSocket, "/link/num-peers", [NumPeers]),
+                    update_num_links(CueHost, CuePort, InSocket, NumPeers),
                     ?MODULE:loop(State);
-                _ ->
-                    logger:debug("Link cue forwarding disabled - ignored num_peers change ", []),
+                #{link_on := false} ->
+                    logger:debug("Link is not on - not sending cue /link/num-peers", []),
                     ?MODULE:loop(State)
             end;
 
 
         {link, tempo_change, Tempo} ->
             case State of
-                #{link_enabled := true,
+                #{link_on := true,
                   cue_host := CueHost,
                   cue_port := CuePort,
                   in_socket := InSocket} ->
                     forward_internal_cue(CueHost, CuePort, InSocket, "/link/tempo-change", [Tempo]),
                     send_api_tempo_update(CueHost, CuePort, InSocket, Tempo),
                     ?MODULE:loop(State);
-                _ ->
-                    logger:debug("Link cue forwarding disabled - ignored tempo change ", []),
+                #{link_on := false} ->
+                    logger:debug("Link is not on - not sending cue /link/tempo-change", []),
                     ?MODULE:loop(State)
             end;
 
         {link, start} ->
             case State of
-                #{link_enabled := true,
+                #{link_on := true,
                   cue_host := CueHost,
                   cue_port := CuePort,
                   in_socket := InSocket} ->
                     forward_internal_cue(CueHost, CuePort, InSocket, "/link/start", []),
                     ?MODULE:loop(State);
-                _ ->
-                    logger:debug("Link cue forwarding disabled - ignored start message ", []),
+                #{link_on := false} ->
+                    logger:debug("Link is not on - not sending cue /link/start", []),
                     ?MODULE:loop(State)
             end;
 
 
         {link, stop} ->
             case State of
-                #{link_enabled := true,
+                #{link_on := true,
                   cue_host := CueHost,
                   cue_port := CuePort,
                   in_socket := InSocket} ->
                     forward_internal_cue(CueHost, CuePort, InSocket, "/link/stop", []),
                     ?MODULE:loop(State);
-                _ ->
-                    logger:debug("Link cue forwarding disabled - ignored stop message ", []),
+                #{link_on := false} ->
+                    logger:debug("Link is not on - not sending cue /link/stop", []),
+                    ?MODULE:loop(State)
+            end;
+
+        {link, enable} ->
+            case State of
+                #{link_on := true,
+                  cue_host := CueHost,
+                  cue_port := CuePort,
+                  in_socket := InSocket} ->
+                    forward_internal_cue(CueHost, CuePort, InSocket, "/link/connected", []),
+                    ?MODULE:loop(State);
+                #{link_on := false} ->
+                    logger:debug("Link is not on - not sending cue /link/connected", []),
+                    ?MODULE:loop(State)
+            end;
+
+        {link, disable} ->
+            case State of
+                #{link_on := true,
+                  cue_host := CueHost,
+                  cue_port := CuePort,
+                  in_socket := InSocket} ->
+                    forward_internal_cue(CueHost, CuePort, InSocket, "/link/disconnected", []),
+                    ?MODULE:loop(State);
+                #{link_on := false} ->
+                    logger:debug("Link is not on - not sending cue /link/disconnected", []),
                     ?MODULE:loop(State)
             end;
 
@@ -171,14 +198,14 @@ loop(State) ->
                 %% TODO: handle {bundle, Time, X}?
                 {cmd, Cmd} ->
                     case State of
-                        #{enabled := true,
+                        #{cues_on := true,
                           cue_host := CueHost,
                           cue_port := CuePort} ->
                             logger:debug("got incoming OSC: ~p", [Cmd]),
                             forward_cue(CueHost, CuePort,
                                         InSocket, Ip, Port, Cmd),
                             ?MODULE:loop(State);
-                        #{enabled := false} ->
+                        #{cues_on := false} ->
                             logger:debug("OSC forwarding disabled - ignored: ~p", [Cmd]),
                             ?MODULE:loop(State)
                     end
@@ -189,50 +216,50 @@ loop(State) ->
                     ?MODULE:loop(State)
             end;
 
-        {internal, true} ->
+        {osc_in_udp_loopback_restricted, true} ->
             case State of
-                #{internal := true} ->
+                #{osc_in_udp_loopback_restricted := true} ->
                     ?MODULE:loop(State);
-                #{internal := false,
+                #{osc_in_udp_loopback_restricted := false,
                   in_socket := InSocket,
-                  in_port := InPort} ->
+                  osc_in_udp_port := OSCInUDPPort} ->
                     logger:info("Switching cue listener to loopback network"),
                     gen_udp:close(InSocket),
-                    {ok, NewInSocket} = gen_udp:open(InPort,
+                    {ok, NewInSocket} = gen_udp:open(OSCInUDPPort,
                                                      [binary, {ip, loopback}]),
-                    ?MODULE:loop(State#{internal := true,
+                    ?MODULE:loop(State#{osc_in_udp_loopback_restricted := true,
                                         in_socket := NewInSocket})
             end;
 
-        {internal, false} ->
+        {osc_in_udp_loopback_restricted, false} ->
             case State of
-                #{internal := true,
+                #{osc_in_udp_loopback_restricted := true,
                   in_socket := InSocket,
-                  in_port := InPort} ->
+                  osc_in_udp_port := OSCInUDPPort} ->
                     logger:info("Switching cue listener to open network"),
                     gen_udp:close(InSocket),
-                    {ok, NewInSocket} = gen_udp:open(InPort, [binary]),
-                    ?MODULE:loop(State#{internal := false,
+                    {ok, NewInSocket} = gen_udp:open(OSCInUDPPort, [binary]),
+                    ?MODULE:loop(State#{osc_in_udp_loopback_restricted := false,
                                         in_socket := NewInSocket});
-                #{internal := false} ->
-                    ?MODULE:loop(State#{internal := false})
+                #{osc_in_udp_loopback_restricted := false} ->
+                    ?MODULE:loop(State#{osc_in_udp_loopback_restricted := false})
             end;
 
-        {enabled, true} ->
+        {cues_on, true} ->
             logger:info("Enabling cue forwarding "),
-            ?MODULE:loop(State#{enabled := true});
+            ?MODULE:loop(State#{cues_on := true});
 
-        {enabled, false} ->
+        {cues_on, false} ->
             logger:info("Disabling cue forwarding "),
-            ?MODULE:loop(State#{enabled := false});
+            ?MODULE:loop(State#{cues_on := false});
 
-        {midi_enabled, true} ->
+        {midi_on, true} ->
             logger:info("Enabling midi cue forwarding "),
-            ?MODULE:loop(State#{midi_enabled := true});
+            ?MODULE:loop(State#{midi_on := true});
 
-        {midi_enabled, false} ->
+        {midi_on, false} ->
             logger:info("Disabling midi cue forwarding "),
-            ?MODULE:loop(State#{midi_enabled := false});
+            ?MODULE:loop(State#{midi_on := false});
 
         {send_osc, Host, Port, OSC} ->
             send_udp(maps:get(in_socket, State), Host, Port, OSC),
@@ -314,7 +341,15 @@ send_api_reply(State, UUID, Args) ->
 send_api_tempo_update(CueHost, CuePort, InSocket, Tempo) ->
     Bin = osc:encode(["/link-tempo-change", "erlang", Tempo]),
     send_udp(InSocket, CueHost, CuePort, Bin),
-    logger:debug("sending link tempo update [~p] to ~p:~p", [Tempo, CueHost, CuePort]),
+
+    logger:info("sending link tempo update [~p] to ~p:~p", [Tempo, CueHost, CuePort]),
+
+    ok.
+
+update_num_links(CueHost, CuePort, InSocket, NumPeers) ->
+    Bin = osc:encode(["/link-num-peers", "erlang", NumPeers]),
+    send_udp(InSocket, CueHost, CuePort, Bin),
+    logger:debug("sending link num pers [~p] to ~p:~p", [NumPeers, CueHost, CuePort]),
     ok.
 
 forward_internal_cue(CueHost, CuePort, InSocket, Path, Args) ->

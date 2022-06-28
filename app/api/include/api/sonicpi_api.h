@@ -38,6 +38,20 @@ struct ProcessedAudio;
 class OscSender;
 class OscServer;
 
+enum class APIInitResult
+{
+  Successful,
+  TerminalError,
+  ScsynthBootError
+};
+
+enum class BootDaemonInitResult
+{
+  Successful,
+  TerminalError,
+  ScsynthBootError
+};
+
 enum class SonicPiPath
 {
     RootPath,            // Sonic Pi Application root
@@ -52,6 +66,9 @@ enum class SonicPiPath
     TauLogPath,          // Log file for Tau IO Server output
     SCSynthLogPath,      // Log file for SuperCollider scsynth's output
     GUILogPath,          // Log file for GUI
+    ClearLogsPath,       // Path to Ruby script for clearing log dir
+    ConfigPath,          // Base config folder
+    AudioSettingsConfigPath  // Path to toml config file for audio settings
 };
 
 // NOTE: These port names returned by ruby; they match the symbols and cannot be changed.
@@ -59,10 +76,12 @@ enum class SonicPiPortId
 {
     Invalid,
     daemon,
-    gui_listen_to_server,
-    gui_send_to_server,
+    gui_listen_to_spider,
+    gui_send_to_spider,
     scsynth,
-    server_osc_cues
+    tau_osc_cues,
+    tau,
+    phx_http
 };
 
 // Log output of the API to the log files or the console?
@@ -101,7 +120,7 @@ enum class MessageType
     Message,
     Info,
     InfoText,
-    Muti
+    Multi
 };
 
 struct MessageData
@@ -123,6 +142,11 @@ struct MessageInfo : MessageData
 
     std::vector<MessageData> multi;
 };
+
+ struct ScsynthInfo
+ {
+   std::string text;
+ };
 
 enum class MidiType
 {
@@ -197,6 +221,9 @@ struct IAPIClient
     virtual void Version(const VersionInfo& info) = 0;
     virtual void AudioDataAvailable(const ProcessedAudio& audio) = 0;
     virtual void Buffer(const BufferInfo& info) = 0;
+    virtual void ActiveLinks(const int numLinks) = 0;
+    virtual void BPM(const double bpm) = 0;
+    virtual void Scsynth(const ScsynthInfo& scsynthInfo) = 0;
 };
 
 // Always UDP
@@ -253,7 +280,16 @@ public:
     virtual ~SonicPiAPI();
 
     // Start the ruby server, connect the ports, find the paths.
-    virtual bool Init(const fs::path& rootPath);
+    virtual APIInitResult Init(const fs::path& rootPath, bool noScsynthInputs = false);
+
+    virtual void StartClearLogsScript();
+
+    virtual void RestartTau();
+
+    virtual bool LinkEnable();
+    virtual bool LinkDisable();
+
+    virtual bool SetLinkBPM(double bpm);
 
     // Wait for the server to be in a good state
     virtual bool PingUntilServerCreated();
@@ -268,7 +304,7 @@ public:
     // Stop all music
     virtual void Stop();
 
-    virtual void BufferNewLineAndIndent(int point_line, int point_index, int first_line, const std::string& code, const std::string& fileName, const std::string& id);
+    virtual void BufferNewLineAndIndent(int point_line, int point_index, int first_line, const std::string& code, const std::string& fileName);
 
     // ** Audio processor
 
@@ -285,9 +321,9 @@ public:
     virtual void AudioProcessor_ConsumedAudio();
 
     std::string GetLogs();
+    std::string GetScsynthLog();
 
-    const std::string& GetGuid() const;
-
+    const int GetGuid() const;
 
     virtual bool TestAudio();
 
@@ -298,6 +334,7 @@ public:
     virtual const int& GetPort(SonicPiPortId port);
 
     virtual bool SendOSC(oscpkt::Message m);
+    virtual bool TauSendOSC(oscpkt::Message m);
 
     virtual void LoadWorkspaces();
 
@@ -313,7 +350,7 @@ public:
 private:
     fs::path FindHomePath() const;
 
-    bool StartBootDaemon();
+    BootDaemonInitResult StartBootDaemon(bool noScsynthInputs);
     bool StartOscServer();
     void StopOscServer();
 
@@ -335,7 +372,6 @@ private:
     std::ofstream m_stdlog;
 
     std::shared_ptr<reproc::process> m_bootDaemonProcess;
-    std::shared_ptr<kissnet::tcp_socket> m_bootDaemonSock;
 
     std::mutex m_osc_mtx;
     bool m_shutdown_engaged = false;
@@ -347,10 +383,12 @@ private:
     std::thread m_pingerThread;
     std::thread m_bootDaemonSockPingLoopThread;
 
-    std::shared_ptr<OscServer> m_spOscServer;
-    std::shared_ptr<OscSender> m_spOscSender;
+    std::shared_ptr<OscServer> m_spOscSpiderServer;
+    std::shared_ptr<OscSender> m_spOscSpiderSender;
+    std::shared_ptr<OscSender> m_spOscDaemonSender;
+    std::shared_ptr<OscSender> m_spOscTauSender;
     std::shared_ptr<AudioProcessor> m_spAudioProcessor;
-    std::string m_guid;
+    int m_token;
 
     IAPIClient* m_pClient = nullptr;
     APIProtocol m_protocol = APIProtocol::UDP;

@@ -26,18 +26,9 @@
 
 <a name="v4.0.0"></a>
 
-## Version 4.0.0 - 'Beta'
+## Version 4.0.0 'BETA'
 To be released...
 <!-- [(view commits)](https://github.com/sonic-pi-net/sonic-pi/commits/v4.0.0): -->
-
-### Known Issues (to be addressed in upcoming Betas)
-* On macOS, the booting procedure no longer attempts to tweak the audio-card's sample rates to match and instead crashes on a mismatch.
-* There are no GUI elements to view/manipulate the new Link metronome.
-* Link is enabled by default and cannot be disabled via the GUI.
-* MIDI port names are very long and change on disconnect/reconnect on Linux.
-* Timing safety system (that kills threads if they get too far behind) is currently disabled.  (This is being redesigned to work within the new constraints imposed by the Link system).
-* Using `sync` with an external OSC or MIDI message whilst in `:link` bpm mode is broken.
-
 
 ### Breaking Changes
 * Previously it was possible that the `onset:` option for `sample`
@@ -46,23 +37,47 @@ To be released...
   won't affect any code using earlier indexes but will affect code which
   uses indexes larger than the number of onsets (and therefore relying
   on the index wrapping behaviour).
+* The Minecraft Pi Edition API has been removed (all `mc_`
+  fns). Minecraft Pi Edition appears to no longer ship on Raspberry Pi
+  OS and the Pi Edition API is not the same as the standard Minecraft
+  API.
 
 
 ### New 
 * Support for [Ableton Link](https://www.ableton.com/link/). This enables you to synchronise the tempo of Sonic Pi running on multiple computers connected on the same network. It will also enable automatic BPM synchronisation with music production tools such as Ableton Live, VJ tools such as Resolume, DJ hardware such as the MPC and many compatible iPad music apps. For a full list see: https://www.ableton.com/link/products/,,
-* New fn `current_random_source` which returns the current random number source kind (see `use_random_source`).
 * New `:link` option to fn `use_bpm`. This enables Link mode for the current thread which automatically syncs the BPM to the Link metronome (which also syncs it with all other Link-capable apps running on any computer connected to the local (wired or wifi) network.
+* New fn `link` which sets the BPM to a new `:link` mode and also waits until the start of the next bar (as determined by Link) before continuing. This lets you automatically sync tempo and beat phase in one command. 
+* New fn `link_sync` which sets the BPM to a new `:link` mode, waits for the Link session to be playing and also waits until the start of the next bar (as determined by Link) before continuing. This lets you automatically "arm" Sonic Pi to sync tempo and beat phase and wait for an external "play" command from another Link device - such as Ableton Live.
 * New fn `set_link_bpm!` to change the BPM/tempo of the Link metronome (and simultaneously change the tempo of all connected Link-capable apps on the network).
+* New fn `current_random_source` which returns the current random number source kind (see `use_random_source`).
+* New fn `load_synthdef` which lets you load a single synthdef file.
+* `load_synthdefs` now loads both directories and single files (by dispatching to `load_synthdef` where necessary).
 
 
 ### Synths & FX
+* New synth `:winwood_lead` - a lead synth inspired by the Winwood songs from the early 80s.
+* New synth `:bass_foundation` - a soft bass synth inspired by the sounds of the 80s.
+* New synth `:bass_highend` - an addition to the :bass_foundation synth inspired by the sounds of the 80s.
+
+
+### Examples
+* New Algomancer example - Blockgame coded by DJ Dave.
 
 
 ### GUI
+* Preference pane is now an overlay which hovers over the main window. This means that opening and closing it does not inadvertantly modify a carefully chosen layout e.g. for a performance.
+* New preference option to show and hide the pane titles such as Scope, Log, Cues, Context, Help, etc.
+* New preference option to hide the menubar when in fullscreen mode (Windows and Linux only as this behaviour is standard on macOS).
+* New preference option for enabling audio inputs (now disabled by default). Modifying this setting requires a reboot to take effect.
+* Preferences now show audio hardware information such as connected input/out devices, sample rate, block size etc. The amount of information displayed varies by platform.
+* New GUI controls for interacting with the new Link Metronome. You can connect/disconnect to the network (to share tempo with others), change the tempo (in BPM) and tap out a new tempo.
+* Increase width of panel dividers and highlight on mouse hover.
+* Highlight scrollbars and preference checkbox descriptions on mouse hover.
+* Scrollbars now have rounded edges.
 * Teach autocompletion about random source choices: `:white`, `:light_pink`, `:pink`, etc.
 * Improve syntax indentation.
-* Improvements for Arabic, Dutch, Estonian, German, Italian, Japanese, Korean, Polish, Portuguese (Brazil), Sinhala, Spanish
-* Introduced new translations for Basque.
+* Improvements for Arabic, Catalan, Chinese (Simplified), Dutch, Estonian, French, German, Italian, Japanese, Korean, Persian, Polish, Portuguese (Brazil), Russian, Sinhala, Spanish, Swedish
+* Introduced new translations for Basque, Gaelic.
 
 
 ### Improvements
@@ -70,7 +85,9 @@ To be released...
 * When running on Raspberry Pi, Sonic Pi connects to PulseAudio by default.
 * The scheduling accuracy of outgoing OSC and MIDI messages is improved on Windows.
 * Optimise `midi_clock_beat`.
-
+* `note_range` can now handle both increasing and decreasing note ranges.
+* No longer connect to the input sound device on macOS by default - this also means audio input/output rate mismatches no longer cause boot issues on macOS by default.
+* SuperCollider audio server boot issues are now immediately detected and reported as a specific issue to the user alongside the full scsynth log file. 
 
 
 ### Bugfixes
@@ -78,6 +95,10 @@ To be released...
 * Synths `:dull_bell` and `:pretty_bell` now properly free themselves when they finish playing, which now means the resources they consumed are also properly freed. 
 * Indexing into an empty ring no longer causes a divide by zero error.
 * No longer attempt to increase audio server priority on Windows which causes booting errors in some cases.
+* Fixed encoding issues when saving/loading files containing non-ascii characters on Windows.
+* `range` no longer loops infinitely with a step size of 0. Instead it now throws an error.
+* In some circumstances having the lissajous visualiser visible caused the GUI to crash on startup. This has now been addressed.
+* Stop thread hanging when passing `0` as the first argument to `spread`. Now just returns a ring of false values.
 
 
 <a name="v3.3.1"></a>

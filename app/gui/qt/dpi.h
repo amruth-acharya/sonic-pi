@@ -13,9 +13,13 @@ inline QSizeF GetDisplayScale()
 
 #if defined(Q_OS_WIN)
   float scale = 96.0f * 1.6f;
-#else
+#elif defined(Q_OS_MAC)
   float scale = 96.0f;
+#else
+  //assuming linux
+  float scale = 96.0f * 1.2f;
 #endif
+
 
   QSizeF scaleDpi = QSizeF(scale, scale);
     if (const QScreen* pScreen = QGuiApplication::primaryScreen())
@@ -49,6 +53,12 @@ inline int ScaleHeightForDPI(int y)
   // ensure returned value is at least 1
   auto scale = GetDisplayScale();
   return (scale.height() * y) + 1;
+}
+
+inline int ScaleYDeltaForDPI(int y)
+{
+  auto scale = GetDisplayScale();
+  return (scale.height() * y);
 }
 
 inline int ScaleWidthForDPI(int x)
@@ -97,6 +107,7 @@ inline QString ScalePxInStyleSheet(QString style)
   style = style.replace(QRegularExpression(":\\s*27dx"), QString(": %1px").arg(ScaleHeightForDPI(27)));
   style = style.replace(QRegularExpression(":\\s*28dx"), QString(": %1px").arg(ScaleHeightForDPI(28)));
   style = style.replace(QRegularExpression(":\\s*29dx"), QString(": %1px").arg(ScaleHeightForDPI(29)));
+  style = style.replace(QRegularExpression(":\\s*35dx"), QString(": %1px").arg(ScaleHeightForDPI(35)));
   style = style.replace(QRegularExpression(":\\s*3\\ddx"), QString(": %1px").arg(ScaleHeightForDPI(30)));
   style = style.replace(QRegularExpression(":\\s*4\\ddx"), QString(": %1px").arg(ScaleHeightForDPI(40)));
   style = style.replace(QRegularExpression(":\\s*5\\ddx"), QString(": %1px").arg(ScaleHeightForDPI(50)));

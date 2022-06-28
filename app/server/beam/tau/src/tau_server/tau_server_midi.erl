@@ -130,6 +130,7 @@ update_midi_ports(State) ->
         NewPorts =:= OldPorts ->
             State;
         true ->
+            sp_midi:midi_refresh_devices(),
             CueServer = maps:get(cue_server, State),
             CueServer ! {update_midi_ports, NewIns, NewOuts},
             State#{midi_ins := NewIns,

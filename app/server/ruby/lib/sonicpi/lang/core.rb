@@ -596,7 +596,7 @@ eval_file \"~/path/to/sonic-pi-code.rb\" #=> will run the contents of this file"
 
 OSC (Open Sound Control) is a simple way of passing messages between two separate programs on the same computer or even on different computers via a local network or even the internet. `use_osc` allows you to specify which computer (`hostname`) and program (`port`) to send messages to.
 
-It is possible to send messages to the same computer by using the host name `\"localhost\"`
+It is possible to send messages to the same computer by using the host name `\"localhost\"`.
 
 This is a thread-local setting - therefore each thread (or live loop) can have their own separate `use_osc` values.
 
@@ -611,23 +611,23 @@ osc \"/foo/bar\"             # Send an OSC message with path \"/foo/bar\"
                              # and no arguments
 ",
 
-" # Send an OSC messages with arguments to another program on the same machine
+" # Send an OSC message with arguments to another program on the same machine
 
 use_osc \"localhost\", 7000        # Specify port 7000 on this machine
 osc \"/foo/bar\" 1, 3.89, \"baz\"  # Send an OSC message with path \"/foo/bar\"
                                    # and three arguments:
                                    # 1) The whole number (integer) 1
-                                   # 2) The fractional number (float) 3,89
+                                   # 2) The fractional number (float) 3.89
                                    # 3) The string \"baz\"
 ",
 
-" # Send an OSC messages with arguments to another program on a different machine
+" # Send an OSC message with arguments to another program on a different machine
 
 use_osc \"10.0.1.5\", 7000         # Specify port 7000 on the machine with address 10.0.1.5
 osc \"/foo/bar\" 1, 3.89, \"baz\"  # Send an OSC message with path \"/foo/bar\"
                                    # and three arguments:
                                    # 1) The whole number (integer) 1
-                                   # 2) The fractional number (float) 3,89
+                                   # 2) The fractional number (float) 3.89
                                    # 3) The string \"baz\"
 ",
 
@@ -637,7 +637,7 @@ use_osc \"localhost\", 7000  # Specify port 7000 on this machine
 osc \"/foo/bar\"             # Send an OSC message to port 7000
 osc \"/foo/baz\"             # Send another OSC message to port 7000
 
-use_osc \"localhost\", 7005  # Specify port 7000 on this machine
+use_osc \"localhost\", 7005  # Specify port 7005 on this machine
 osc \"/foo/bar\"             # Send an OSC message to port 7005
 osc \"/foo/baz\"             # Send another OSC message to port 7005
 ",
@@ -689,7 +689,7 @@ osc \"/foo/baz\"             # Send another OSC message to port 7010
           doc:            "Sets the destination host and port that `osc` will send messages to for the given do/end block.",
           examples: [
 "
-use_osc \"localhost\", 7000  # Specify port 7010
+use_osc \"localhost\", 7000  # Specify port 7000
 osc \"/foo/baz\"             # Send an OSC message to port 7000
 
 with_osc \"localhost\", 7010 do # set hostname and port for the duration
@@ -754,7 +754,7 @@ osc_send \"localhost\", 7000, \"/foo/baz\"  # Send an OSC message to port 7000
 
 OSC (Open Sound Control) is a simple way of passing messages between two separate programs on the same computer or even on different computers via a local network or even the internet. `osc` enables you to send well-timed OSC messages from within Sonic Pi. `osc` will ensure that the OSC message is sent at the correct time using the same timing system shared with the synthesis functionality via `sample`, `synth` and friends. `osc` even works seamlessly within `time_warp` - see examples.
 
-A typical OSC message has two parts: a descriptive `path` which looks simalar to a URL (website address), and an optional list of `arguments` that are either numbers or strings.
+A typical OSC message has two parts: a descriptive `path` which looks similar to a URL (website address), and an optional list of `arguments` that are either numbers or strings.
 
 For example, a hypothetical synth program might accept this OSC message:
 
@@ -773,13 +773,13 @@ However, in order to send the OSC message you must first specify where to send i
 `osc \"/set/filter\", \"lowpass\", 80, 0.5`
 
 
-Note, by default, Sonic Pi listens for OSC messages on port `4560`, so you may send messages to an external machine running Sonic Pi if you know the IP address of that external machine. Any OSC messages received on port `4559` are automatically converted to standard cue events and displayed in the GUI's cue log. This also means that you can use `sync` to wait for the next incoming OSC message with a given path (see example).
+Note, by default, Sonic Pi listens for OSC messages on port `4560`, so you may send messages to an external machine running Sonic Pi if you know the IP address of that external machine. Any OSC messages received on port `4560` are automatically converted to standard cue events and displayed in the GUI's cue log. This also means that you can use `sync` to wait for the next incoming OSC message with a given path (see example).
 
-Finally, it is also very useful to send OSC messages to aother programs on the same computer. This can be achieved by specifying \"localhost\" as the hostname and the port as normal (depending on which port the other program is listening on).
+Finally, it is also very useful to send OSC messages to other programs on the same computer. This can be achieved by specifying \"localhost\" as the hostname and the port as normal (depending on which port the other program is listening on).
 
 See `osc_send` for a version which allows you to specify the hostname and port directly (ignoring any values set via `use_osc` or `with_osc`).
 
-For further information see the OSC spec: [http://opensoundcontrol.org/spec-1_0](http://opensoundcontrol.org/spec-1_0)
+For further information see the OSC spec: [http://opensoundcontrol.org/spec-1_0.html](http://opensoundcontrol.org/spec-1_0.html)
 ",
       examples: [
 " # Send a simple OSC message to another program on the same machine
@@ -789,7 +789,7 @@ osc \"/foo/bar\"             # Send an OSC message with path \"/foo/bar\"
                              # and no arguments
 ",
 
-" # Send an OSC messages with arguments to another program on the same machine
+" # Send an OSC message with arguments to another program on the same machine
 
 use_osc \"localhost\", 7000        # Specify port 7000 on this machine
 osc \"/foo/bar\", 1, 3.89, \"baz\" # Send an OSC message with path \"/foo/bar\"
@@ -799,7 +799,7 @@ osc \"/foo/bar\", 1, 3.89, \"baz\" # Send an OSC message with path \"/foo/bar\"
                                    # 3) The string \"baz\"
 ",
 
-" # Send an OSC messages with arguments to another program on a different machine
+" # Send an OSC message with arguments to another program on a different machine
 
 use_osc \"10.0.1.5\", 7000         # Specify port 7000 on the machine with address 10.0.1.5
 osc \"/foo/bar\", 1, 3.89, \"baz\" # Send an OSC message with path \"/foo/bar\"
@@ -851,7 +851,7 @@ end
       doc name:           :reset,
           introduced:     Version.new(2,11,0),
           summary:        "Reset all thread locals",
-          args:           [[]],
+          args:           [],
           returns:        nil,
           opts:           nil,
           accepts_block:  false,
@@ -915,7 +915,7 @@ end"]
       doc name:           :clear,
           introduced:     Version.new(2,11,0),
           summary:        "Clear all thread locals to defaults",
-          args:           [[]],
+          args:           [],
           returns:        nil,
           opts:           nil,
           accepts_block:  false,
@@ -1635,6 +1635,12 @@ end"
           res = [true] * size
           return res.ring
         end
+        # if someone requests 0 accents, return a ring with no accents
+        if num_accents.zero?
+          res = [false] * size
+          return res.ring
+        end
+
 
         # new part
         v1 = [[true]] * num_accents
@@ -1750,6 +1756,9 @@ end"
         end
 
         return [].ring if start == finish
+
+        raise ArgumentError, "step size: opt for fn range should be a non-zero number" unless step_size != 0
+
         step_size = step_size.abs
         res = []
         cur = start
@@ -2140,7 +2149,7 @@ end"
 The loop must either `sleep` or `sync` each time round otherwise it will stop and throw an error. This is to stop the loop from spinning out of control and locking the system.
 
 For a more powerful, flexible loop built for live coding see `live_loop`.",
-          args:           [[]],
+          args:           [],
           opts:           nil,
           accepts_block:  true,
           requires_block: true,
@@ -2359,7 +2368,7 @@ end                           # logical time of live loop :bar.
           introduced:     Version.new(2,9,0),
           summary:        "Return block duration",
           doc:            "Given a block, runs it and returns the amount of time that has passed. This time is in seconds and is not scaled to the current BPM. Any threads spawned in the block are not accounted for.",
-          args:           [[]],
+          args:           [],
           opts:           nil,
           accepts_block:  true,
           requires_block: true,
@@ -2395,7 +2404,7 @@ puts dur #=> Returns 1.5 as 1.5 seconds have passed within the block
           introduced:     Version.new(2,9,0),
           summary:        "Determine if block contains sleep time",
           doc:            "Given a block, runs it and returns whether or not the block contained sleeps or syncs",
-          args:           [[]],
+          args:           [],
           opts:           nil,
           accepts_block:  true,
           requires_block: true,
@@ -3263,7 +3272,7 @@ print rand_i_look(5) # will print either 0, 1, 2, 3, or 4 to the output pane"
       doc name:           :rand_reset,
           introduced:     Version.new(2,7,0),
           summary:        "Reset rand generator to last seed",
-          args:           [[]],
+          args:           [],
           opts:           nil,
           accepts_block:  false,
           doc:            "Resets the random stream to the last specified seed. See `use_random_seed` for changing the seed.",
@@ -3578,7 +3587,87 @@ You can see the 'buckets' that the numbers between 0 and 1 fall into with the fo
   cue :quux # cue is displayed in log
   "]
 
+      def link_sync(*args)
+        sync "/link/start" unless @tau_api.link_is_playing?
+        link(*args)
+      end
+      doc name:          :link_sync,
+          introduced:    Version.new(4,0,0),
+          summary:       "Use Ableton Link network metronome with automatic session and phase syncing.",
+          doc:           "Similar to link except it also waits for the link session to be playing. If it is, then it behaves identially to link. If the session is not playing, then link_sync will first wait until the session has started before then continuing as if just link had been called.
 
+See link for further details and usage.",
+         args:          [[:quantum, :number],
+                         [:phase, :number]],
+         opts:           nil,
+         accepts_block:  false,
+         requires_block: false,
+         examples: [""]
+
+      def link(*args)
+        params, opts = split_params_and_merge_opts_array(args)
+        quantum = params[0] || opts.fetch(:quantum, 4)
+        phase = params[1] || opts.fetch(:phase, 0)
+
+        # Schedule messages
+        __schedule_delayed_blocks_and_messages!
+
+        __system_thread_locals.set_local(:sonic_pi_spider_time_state_cache, [])
+        __system_thread_locals.set_local(:sonic_pi_local_last_sync, nil)
+        use_bpm :link
+
+        beat, time = @tau_api.link_get_beat_and_clock_time_at_phase(phase, quantum)
+
+        sat = current_sched_ahead_time
+
+        __system_thread_locals.set(:sonic_pi_spider_bpm, :link)
+        __change_spider_time_and_beat!(time - sat, beat)
+
+        new_vt = __get_spider_time.to_f
+        now = Time.now.to_f
+        t = (new_vt - now).to_f - 0.2
+        Kernel.sleep t if t > 0.2
+        __system_thread_locals.set(:sonic_pi_spider_slept, true)
+
+        ## reset control deltas now that time has advanced
+        __system_thread_locals.set_local :sonic_pi_local_control_deltas, {}
+      end
+      doc name:          :link,
+          introduced:    Version.new(4,0,0),
+          summary:       "Use Ableton Link network metronome with automatic phase syncing.",
+          doc:           "By default link waits for the start of the next bar of the shared network metronome link. You can choose how many beats there are in a bar by setting the quantum option and/or which beat to wait for by setting the phase option.
+
+By default, the phase to sync on is 0 and the quantum (max number of beats) is 4.
+
+Also switches BPM to :link mode so there is no explicit need to call use_bpm :link.  The time and beat set to match the network Link metronome.
+
+This function will block the current thread until the next matching phase as if `sleep` had been called with the exact sleep time
+
+If the quantum is 4 (the default) this suggests there are 4 beats in each bar. If the phase is set to 0 (also the default) this means that calling link will sleep until the very start of the next bar before continuing.
+
+This can be used to sync multiple instances of Sonic Pi running on different computers connected to the same network (via wifi or ethernet). It can also be used to share and coordinate time with other apps and devices. For a full list of link-compatible apps and devices see:  [https://www.ableton.com/en/link/products/](https://www.ableton.com/en/link/products/)
+
+For other related link functions see link_sync, use_bpm :link, set_link_bpm!
+",
+          args:          [[:quantum, :number],
+                          [:phase, :number]],
+          opts:          nil,
+          accepts_block: false,
+          requires_block: false,
+          examples:      ["
+use_bpm 120      # bpm is at 120
+link             # wait for the start of the next bar before continuing
+                 # (where each bar has 4 beats)
+puts current_bpm #=> :link (not 120)
+  ",
+        "
+link 8 # wait for the start of the next bar
+       # (where each bar has 8 beats)
+",
+        "
+link 7, 2 # wait for the 2nd beat of the next bar
+          # (where each bar has 7 beats)
+"      ]
 
 
       def set_link_bpm!(bpm)
@@ -3593,7 +3682,7 @@ You can see the 'buckets' that the numbers between 0 and 1 fall into with the fo
 
 Note that this will *also* change the tempo of *all link metronomes* connected to the local network. This includes other instances of Sonic Pi, Music Production tools like Ableton Live, VJ tools like Resolume, DJ hardware like the MPC and many iPad music apps.
 
-For a full list of link-compatible apps and devices see:  https://www.ableton.com/en/link/products/
+For a full list of link-compatible apps and devices see:  [https://www.ableton.com/en/link/products/](https://www.ableton.com/en/link/products/)
 
 Also note that the current thread does not have to be in Link BPM mode for this function to affect the Link clock's BPM.
 
@@ -3996,7 +4085,7 @@ Affected by calls to `use_bpm`, `with_bpm`, `use_sample_bpm` and `with_sample_bp
           introduced:    Version.new(2,10,0),
           summary:       "Get current beat",
           doc:           "Returns the beat value for the current thread/live_loop. Beats are advanced only by calls to `sleep` and `sync`. Beats are distinct from virtual time (the value obtained by calling `vt`) in that it has no notion of rate. It is just essentially a counter for sleeps. After a `sync`, the beat is overridden with the beat value from the thread which called `cue`. ",
-          args:          [[]],
+          args:          [],
           opts:          nil,
           accepts_block: false,
           examples:      ["
@@ -4053,7 +4142,7 @@ Affected by calls to `use_bpm`, `with_bpm`, `use_sample_bpm` and `with_sample_bp
 
       def set_sched_ahead_time!(sat)
         t = __get_spider_time
-        b = __get_spider_beat_
+        b = __get_spider_beat
         i = __current_thread_id
         m = current_bpm_mode
         @system_state.set(t, 0, i, 0, b, m, :sched_ahead_time, sat)
@@ -4117,7 +4206,7 @@ Set sched ahead time to 0 for the current thread. Shorthand for `use_sched_ahead
 See `use_sched_ahead_time` for a version of this function which allows you to set the schedule ahead time to any arbitrary value. Note, `use_real_time` will override any value set with `set_sched_ahead_time!` for the current thread.
 
 ",
-          args:          [[]],
+          args:          [],
           opts:          nil,
           modifies_env: true,
           accepts_block: false,
@@ -4146,7 +4235,7 @@ Sets sched ahead time to 0 within the block for the current thread. Shorthand fo
 See `with_sched_ahead_time` for a version of this function which allows you to set the schedule ahead time to any arbitrary value. Note, `with_real_time` will override any value set with `set_sched_ahead_time!` for the current thread.
 
 ",
-          args:          [[]],
+          args:          [],
           opts:          nil,
           modifies_env: true,
           accepts_block: false,
@@ -4208,45 +4297,47 @@ puts current_sched_ahead_time # Prints 0.5"]
         __system_thread_locals.set_local(:sonic_pi_spider_time_state_cache, [])
         __system_thread_locals.set_local(:sonic_pi_local_last_sync, nil)
 
+        ## reset control deltas if time has advanced
+        __system_thread_locals.set_local :sonic_pi_local_control_deltas, {} if beats != 0
+
         # Schedule messages
         __schedule_delayed_blocks_and_messages!
-        return if beats == 0
-        __system_thread_locals.set(:sonic_pi_spider_slept, true)
+        __system_thread_locals.set(:sonic_pi_spider_slept, true) if beats != 0
         __change_spider_beat_and_time_by_beat_delta!(beats)
-
-        sat = current_sched_ahead_time
-        new_vt = __get_spider_time.to_r
-        now = Time.now.to_f
 
         in_time_warp = __system_thread_locals.get(:sonic_pi_spider_in_time_warp)
 
-        if (now - (sat + 0.5)) > new_vt
+        return if in_time_warp
 
-          # raise TimingError, "Timing Exception: thread got too far behind time
+        sat = current_sched_ahead_time
+        new_vt = __get_spider_time.to_f
+        now = Time.now.to_f
+
+        if (now - (sat + 1)) > new_vt
           __delayed_serious_warning "Serious timing error. Too far behind time..."
+          raise TimingError, "Timing Exception: thread got too far behind time"
         elsif (now - sat) > new_vt
           __delayed_serious_warning "Timing error: can't keep up..."
         elsif now > new_vt
-          ## TODO: Remove this and replace with a much better silencing system which
-          ## is implemented within the __delayed_* fns
           unless __thread_locals.get(:sonic_pi_mod_sound_synth_silent) || in_time_warp
             __delayed_warning "Timing warning: running slightly behind..."
           end
-        else
-          if in_time_warp
-            # Don't sleep if within a time warp
-            #
-            # However, do make sure the vt hasn't got too far ahead of the real time
-            # raise TimingError, "Timing Exception: thread got too far ahead of time" if  (new_vt - 17) > now
-          else
-            t = (new_vt - now).to_f
-            Kernel.sleep t
-          end
         end
+        sleep_t = (new_vt - now).to_f - 0.2
+        return if sleep_t < 0.2
 
-
-        ## reset control deltas now that time has advanced
-        __system_thread_locals.set_local :sonic_pi_local_control_deltas, {}
+        if __in_link_bpm_mode
+          @tau_api.link_sleep(sleep_t) do
+            # this code runs if the sleep was short-circuited
+            __change_spider_beat_and_time_by_beat_delta!(0)
+          end
+          post_sleep_vt = __get_spider_time.to_f
+          sleep_t = (post_sleep_vt - Time.now.to_f).to_f - 0.2
+          return if sleep_t < 0.2
+          sleep 0
+        else
+          Kernel.sleep sleep_t
+        end
       end
       doc name:           :sleep,
           introduced:     Version.new(2,0,0),
@@ -4383,12 +4474,13 @@ puts current_sched_ahead_time # Prints 0.5"]
         __system_thread_locals.set_local :sonic_pi_local_last_sync, se
 
         __system_thread_locals.set(:sonic_pi_spider_synced, true)
-
+        bpm_mode = current_bpm_mode
+        __change_spider_bpm_time_and_beat!(60, se.time, se.beat) if __in_link_bpm_mode
         if bpm_sync
           raise StandardError, "Incorrect bpm value. Expecting either :link or a number such as 120" unless ((se.bpm == :link) || se.bpm.is_a?(Numeric))
           __change_spider_bpm_time_and_beat!(se.bpm, se.time, se.beat)
         else
-          __change_spider_bpm_time_and_beat!(current_bpm_mode, se.time, se.beat)
+          __change_spider_bpm_time_and_beat!(bpm_mode, se.time, se.beat)
         end
 
         run_info = ""

@@ -24,3 +24,14 @@ tau-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# In case you use Node.js/npm, you want to ignore these.
+npm-debug.log
+/assets/node_modules/
+
+
+/priv/*.so
+/priv/*.dylib
+/priv/*.dll
+/ebin/*
+/log/*

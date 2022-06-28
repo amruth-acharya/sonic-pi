@@ -35,16 +35,29 @@ module SonicPi
       @internal_cue_handler = handlers[:internal_cue]
       @updated_midi_ins_handler = handlers[:updated_midi_ins]
       @updated_midi_outs_handler = handlers[:updated_midi_outs]
+      @updated_link_num_peers_handler = handlers[:updated_link_num_peers]
+      @updated_link_bpm_handler = handlers[:updated_link_bpm]
 
       add_incoming_api_handlers!
 
       @tempo = nil
       @link_time_micros = nil
       @local_time_micros = nil
-      @link_time_delta_micros_prom = Promise.new
+      @link_time_delta_micros = 0
+
+      block_until_tau_ready!
 
       Thread.new do
-        initialize_link_info!
+        # Continually update link time delta every 5 seconds this is
+        # particularly necessary in the case where Sonic Pi is running
+        # on a machine that can be 'put to sleep' such as a laptop - in
+        # which case this delta always needs updating after being woken
+        # to account for the amount of time the laptop was closed for
+        # and the OS was in a hibernation state.
+        loop do
+          update_link_time_delta!
+          Kernel.sleep 5
+        end
       end
     end
 
@@ -66,76 +79,11 @@ module SonicPi
       api_send_at(t, "/midi-at", b)
     end
 
-    def link_current_time
-      res = api_rpc("/link-get-current-time")
-      res[0].to_i
-    end
+    # Link API
 
-    def link_current_time_and_beat(quantise_beat=true)
-      link_time = link_current_time
-      beat = link_get_beat_at_time(link_time)
-
-      if quantise_beat
-        beat = (beat + 1).to_i
-        link_time = link_get_time_at_beat(beat)
-      end
-
-      clock_time = (link_time + @link_time_delta_micros_prom.get) / 1_000_000.0
-
-      [clock_time, beat]
-    end
-
-    def link_tempo(force_api_call=false)
-      if force_api_call
-        res = api_rpc("/link-get-tempo")
-        @tempo = res[0]
-        return res[0]
-      elsif @tempo
-        return @tempo
-      else
-        @tempo = link_tempo(true)
-      end
-    end
-
-    def link_is_enabled?
-      res = api_rpc("/link-is-enabled")
-      res[0] == 1
-    end
-
-    def link_num_peers
-      res = api_rpc("/link-get-num-peers")
-      res[0].to_i
-    end
-
-    def link_get_beat_at_time(time, quantum = 4)
-      res = api_rpc("/link-get-beat-at-time", SonicPi::OSC::Int64.new(time), quantum)
+    def link_is_on?
+      res = api_rpc("/link-is-on")
       res[0]
-    end
-
-    def link_get_time_at_beat(beat, quantum = 4)
-      res = api_rpc("/link-get-time-at-beat", beat, quantum)
-      res[0]
-    end
-
-    def link_get_clock_time_at_beat(beat, quantum = 4)
-      link_time = link_get_time_at_beat(beat, quantum)
-      t_with_delta = (link_time + @link_time_delta_micros_prom.get) / 1_000_000.0
-      t_with_delta
-    end
-
-    def link_get_beat_at_clock_time(clock_time, quantum = 4)
-      link_time = (clock_time * 1_000_000) - @link_time_delta_micros_prom.get
-      link_get_beat_at_time(link_time)
-    end
-
-    def link_set_bpm_at_clock_time!(bpm, clock_time)
-      res = @tau_comms.send_ts(clock_time, "/link-set-tempo", bpm.to_f)
-
-      # Wait for a max of 100ms for the next tempo change to come in...
-      @incoming_tempo_change_mut.synchronize do
-        @incoming_tempo_change_cv.wait(@incoming_tempo_change_mut, 0.1)
-      end
-      res
     end
 
     def link_disable
@@ -150,6 +98,122 @@ module SonicPi
       @tau_comms.send("/link-reset")
     end
 
+    def link_get_start_stop_sync_enabled
+      res = api_rpc("/link-get-start-stop-sync-enabled")
+      res[0]
+    end
+
+    def link_set_start_stop_sync_enabled!(enabled)
+      @tau_comms.send("/link-set-start-stop-sync-enabled", !!enabled)
+    end
+
+    def link_num_peers
+      res = api_rpc("/link-get-num-peers")
+      res[0].to_i
+    end
+
+    def link_tempo(force_api_call=false)
+      if force_api_call
+        res = api_rpc("/link-get-tempo")
+        @tempo = res[0]
+        return res[0]
+      elsif @tempo
+        return @tempo
+      else
+        @tempo = link_tempo(true)
+      end
+    end
+
+    def link_set_bpm_at_clock_time!(bpm, clock_time)
+      res = @tau_comms.send_ts(clock_time, "/link-set-tempo", bpm.to_f)
+
+      # Wait for a max of 100ms for the next tempo change to come in...
+      @incoming_tempo_change_mut.synchronize do
+        @incoming_tempo_change_cv.wait(@incoming_tempo_change_mut, 0.1)
+      end
+      res
+    end
+
+    def link_get_beat_at_time(time, quantum = 4)
+      res = api_rpc("/link-get-beat-at-time", SonicPi::OSC::Int64.new(time), quantum)
+      res[0]
+    end
+
+    def link_get_phase_at_time(time, quantum = 4)
+      res = api_rpc("/link-get-phase-at-time", SonicPi::OSC::Int64.new(time), quantum)
+      res[0]
+    end
+
+    def link_get_time_at_beat(beat, quantum = 4)
+      res = api_rpc("/link-get-time-at-beat", beat, quantum)
+      res[0]
+    end
+
+    def link_get_beat_and_time_at_phase(phase, quantum)
+      res = api_rpc("/link-get-beat-and-time-at-phase", phase, quantum)
+      res
+    end
+
+    def link_get_beat_and_clock_time_at_phase(phase, quantum)
+      beat, link_time = link_get_beat_and_time_at_phase(phase, quantum)
+      t_with_delta = (link_time + @link_time_delta_micros) / 1_000_000.0
+      [beat, t_with_delta]
+    end
+
+    def link_get_clock_time_at_beat(beat, quantum = 4)
+      link_time = link_get_time_at_beat(beat, quantum)
+      t_with_delta = (link_time + @link_time_delta_micros) / 1_000_000.0
+      t_with_delta
+    end
+
+    def link_get_beat_at_clock_time(clock_time, quantum = 4)
+      link_time = (clock_time * 1_000_000) - @link_time_delta_micros
+      link_get_beat_at_time(link_time)
+    end
+
+    def link_get_phase_at_clock_time(clock_time, quantum = 4)
+      link_time = (clock_time * 1_000_000) - @link_time_delta_micros
+      link_get_phase_at_time(link_time)
+    end
+
+    def link_get_phase_and_beat_at_clock_time(clock_time, quantum = 4)
+      link_time = (clock_time * 1_000_000) - @link_time_delta_micros
+      api_rpc("/link-get-phase-and-beat-at-time", SonicPi::OSC::Int64.new(link_time), quantum)
+    end
+
+    def link_set_is_playing!(enabled, clock_time)
+      @tau_comms.send_ts(clock_time, "/link-set-is-playing", !!enabled)
+    end
+
+    def link_is_playing?
+      res = api_rpc("/link-get-is-playing")
+      res[0]
+    end
+
+    def link_get_time_for_is_playing
+      res = api_rpc("/link-get-time-for-is-playing")
+      res[0]
+    end
+
+    def link_current_time
+      res = api_rpc("/link-get-current-time")
+      res[0].to_i
+    end
+
+    def link_current_time_and_beat(quantise_beat=true)
+      link_time = link_current_time
+      beat = link_get_beat_at_time(link_time)
+
+      if quantise_beat
+        beat = (beat + 1).to_i
+        link_time = link_get_time_at_beat(beat)
+      end
+
+      clock_time = (link_time + @link_time_delta_micros) / 1_000_000.0
+
+      [clock_time, beat]
+    end
+
     def midi_system_start!
       @tau_comms.send("/stop-start-midi-cues", 1)
     end
@@ -159,19 +223,11 @@ module SonicPi
     end
 
     def start_stop_cue_server!(stop)
-      if stop
-        @tau_comms.send("/stop-start-cue-server", 0)
-      else
-        @tau_comms.send("/stop-start-cue-server", 1)
-      end
+      @tau_comms.send("/stop-start-cue-server", !stop)
     end
 
     def cue_server_internal!(internal)
-      if internal
-        @tau_comms.send("/internal-cue-port", 1)
-      else
-        @tau_comms.send("/internal-cue-port", 0)
-      end
+      @tau_comms.send("/osc-in-udp-loopback-restricted", !!internal)
     end
 
     def midi_flush!
@@ -182,28 +238,39 @@ module SonicPi
       @tau_comms.send("/flush", "default")
     end
 
+    def link_sleep(s)
+      t1 = Time.now
+      @incoming_tempo_change_mut.synchronize do
+        @incoming_tempo_change_cv.wait(@incoming_tempo_change_mut, s)
+      end
+      t2 = Time.now
+      if (t2 - t1) < (s + 0.05)
+        yield
+      end
+    end
+
     private
 
-    def initialize_link_info!
-      # this is necessary as we don't want to accidentally add the tau
-      # boot time (or part of it) to the difference between the local
-      # and link time (as TauComms automatically queues requests,
-      # blocking until tau is booted.
-      block_until_tau_ready!
-
-      # Now grab the link and local times
+    def update_link_time_delta!
       @link_time_micros = link_current_time
       @clock_time_micros = Time.now.to_r * 1_000_000
       delta_micros = @clock_time_micros - @link_time_micros
-      @link_time_delta_micros_prom.deliver! delta_micros
+      @link_time_delta_micros =  delta_micros
     end
 
     def add_incoming_api_handlers!
       @tau_comms.add_method("/link-tempo-change") do |args|
-        @incoming_tempo_change_cv.broadcast
         _gui_id = args[0]
         tempo = args[1].to_f
+        @updated_link_bpm_handler.call(tempo)
+        @incoming_tempo_change_cv.broadcast
         @tempo = tempo
+      end
+
+      @tau_comms.add_method("/link-num-peers") do |args|
+        _gui_id = args[0]
+        num_peers = args[1].to_i
+        @updated_link_num_peers_handler.call(num_peers)
       end
 
       @tau_comms.add_method("/midi-ins") do |args|
